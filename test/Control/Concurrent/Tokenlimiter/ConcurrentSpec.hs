@@ -1,4 +1,5 @@
 {-# LANGUAGE NumericUnderscores #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Control.Concurrent.Tokenlimiter.ConcurrentSpec (spec) where
 
@@ -50,6 +51,16 @@ spec = do
       -- One nanosecond later we shouldn't have any more tokens
       computeCurrentCount config 0 0 2_000_000_000 `shouldBe` 10
 
+    it "Can deal with overflow" $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = maxBound -1,
+                tokenLimitConfigMaxTokens = maxBound,
+                tokenLimitConfigTokensPerSecond = 1
+              }
+      -- 10 seconds later we should have no more than maxBound, eventhough the computed count would be maxBound + 9
+      computeCurrentCount config 0 maxBound 10_000_000_000 `shouldBe` maxBound
+
   describe "makeTokenLimiter" $ do
     it "always succeeds" $
       forAllValid $ \config -> do
@@ -70,7 +81,10 @@ spec = do
     it "says true when tokens are available from the start and false otherwise" $
       forAllValid $ \config ->
         forAllValid $ \needed -> do
-          limiter <- makeTokenLimiter config
+          -- We set the tokens per second to 1 because otherwise the generated
+          -- value can be large enough for the time difference between making
+          -- the token limiter and running 'canDebit' to matter.
+          limiter <- makeTokenLimiter config {tokenLimitConfigTokensPerSecond = 1}
           couldDebit <- canDebit limiter needed
           couldDebit `shouldBe` needed <= min (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
 
@@ -88,7 +102,10 @@ spec = do
     it "says true when tokens are available from the start and false otherwise" $
       forAllValid $ \config ->
         forAllValid $ \needed -> do
-          limiter <- makeTokenLimiter config
+          -- We set the tokens per second to 1 because otherwise the generated
+          -- value can be large enough for the time difference between making
+          -- the token limiter and running 'tryDebit' to matter.
+          limiter <- makeTokenLimiter config {tokenLimitConfigTokensPerSecond = 1}
           didDebit <- tryDebit limiter needed
           didDebit `shouldBe` needed <= min (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
 

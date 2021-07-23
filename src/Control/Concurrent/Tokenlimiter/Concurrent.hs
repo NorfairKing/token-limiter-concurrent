@@ -19,9 +19,9 @@ where
 
 import Control.Concurrent
 import Data.Word
-import Debug.Trace
 import GHC.Clock
 import GHC.Generics (Generic)
+import Numeric.Natural
 
 type Count = Word64
 
@@ -91,13 +91,14 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
       pure ((now, newCount), ())
     else do
       let extraTokensNeeded = debit - currentCount
-      let microsecondsToWait =
-            ceiling $
-              1_000_000
-                -- fromIntegral :: Word64 -> Double
-                * fromIntegral extraTokensNeeded
-                -- fromIntegral :: Word64 -> Double
-                / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+      let microsecondsToWaitDouble :: Double
+          microsecondsToWaitDouble =
+            1_000_000
+              -- fromIntegral :: Word64 -> Double
+              * fromIntegral extraTokensNeeded
+              -- fromIntegral :: Word64 -> Double
+              / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+      let microsecondsToWait = ceiling microsecondsToWaitDouble
       threadDelay microsecondsToWait
       nowAfterWaiting <- getMonotonicTimeNSec
       let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
@@ -106,13 +107,21 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
 
 computeCurrentCount :: TokenLimitConfig -> MonotonicTime -> Count -> MonotonicTime -> Count
 computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
-  let nanoDiff = now - lastServiced
-      countToAdd =
-        floor $
+  let nanoDiff :: Word64
+      nanoDiff = now - lastServiced
+      countToAddDouble :: Double
+      countToAddDouble =
+        -- fromIntegral :: Word64 -> Double
+        fromIntegral nanoDiff
           -- fromIntegral :: Word64 -> Double
-          fromIntegral nanoDiff
-            -- fromIntegral :: Word64 -> Double
-            * fromIntegral tokenLimitConfigTokensPerSecond
-            / 1_000_000_000
+          * fromIntegral tokenLimitConfigTokensPerSecond
+          / 1_000_000_000
+      countToAdd :: Word64
+      countToAdd = floor countToAddDouble
+      totalPrecise :: Natural
+      totalPrecise = fromIntegral countThen + fromIntegral countToAdd
+      willOverflow = totalPrecise > fromIntegral (maxBound :: Word64)
       totalCount = countThen + countToAdd
-   in min tokenLimitConfigMaxTokens totalCount
+   in if willOverflow
+        then tokenLimitConfigMaxTokens
+        else min tokenLimitConfigMaxTokens totalCount
