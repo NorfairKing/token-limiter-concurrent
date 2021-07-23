@@ -23,8 +23,10 @@ import GHC.Clock
 import GHC.Generics (Generic)
 import Numeric.Natural
 
+-- | An amount of tokens
 type Count = Word64
 
+-- | A configuration for 'TokenLimiter'
 data TokenLimitConfig = TokenLimitConfig
   { -- | how many tokens should be in the bucket when it's created.
     tokenLimitConfigInitialTokens :: !Count,
@@ -35,11 +37,16 @@ data TokenLimitConfig = TokenLimitConfig
   }
   deriving (Show, Eq, Generic)
 
+-- | A type synonym for a number of "monotonic time" nanoseconds.
+--
+-- This only exists because it is also a 'Word64' and would be too easy to confuse with a 'Count'.
 type MonotonicTime = Word64
 
+-- | A token bucket-based rate limiter
 data TokenLimiter = TokenLimiter
   { tokenLimiterConfig :: !TokenLimitConfig,
-    tokenLimiterLastServiced :: !(MVar (MonotonicTime, Count)) -- Time and count at that time
+    -- | The last time the limiter was used, and what the token count was at that time
+    tokenLimiterLastServiced :: !(MVar (MonotonicTime, Count))
   }
   deriving (Eq, Generic)
 
@@ -105,6 +112,9 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
       let newCount = currentCountAfterWaiting - debit
       pure ((nowAfterWaiting, newCount), ())
 
+-- | Compute the current number of tokens in a bucket purely.
+--
+-- You should not need this function.
 computeCurrentCount :: TokenLimitConfig -> MonotonicTime -> Count -> MonotonicTime -> Count
 computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
   let nanoDiff :: Word64
