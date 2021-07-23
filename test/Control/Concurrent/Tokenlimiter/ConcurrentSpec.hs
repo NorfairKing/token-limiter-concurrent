@@ -2,6 +2,7 @@
 
 module Control.Concurrent.Tokenlimiter.ConcurrentSpec (spec) where
 
+import Control.Concurrent.Async
 import Control.Concurrent.Tokenlimiter.Concurrent
 import Control.Monad
 import Data.Word
@@ -91,6 +92,17 @@ spec = do
           let needed = initial
           nanos <- time_ $ waitDebit limiter needed
           nanos `shouldSatisfy` (< 1_000_000_000)
+
+    it "Waits appropriately when there are multiple threads that want tokens at the same time in this example." $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 2,
+                tokenLimitConfigTokensPerSecond = 1
+              }
+      limiter <- makeTokenLimiter config
+      nanos <- time_ $ concurrently_ (waitDebit limiter 1) (waitDebit limiter 1)
+      nanos `shouldSatisfy` (>= 2_000_000_000)
 
 time_ :: IO a -> IO Word64
 time_ func = snd <$> time func
