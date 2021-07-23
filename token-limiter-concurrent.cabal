@@ -42,7 +42,8 @@ test-suite token-limiter-concurrent-test
   build-tool-depends:
       sydtest-discover:sydtest-discover
   build-depends:
-      async
+      QuickCheck
+    , async
     , base >=4.7 && <5
     , genvalidity
     , genvalidity-sydtest

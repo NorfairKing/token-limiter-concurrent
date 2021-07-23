@@ -22,8 +22,9 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - token-limiter-concurrent
+    - QuickCheck
     - async
-    - sydtest
     - genvalidity
     - genvalidity-sydtest
+    - sydtest
+    - token-limiter-concurrent

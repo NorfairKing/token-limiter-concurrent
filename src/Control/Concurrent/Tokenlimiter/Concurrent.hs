@@ -43,10 +43,15 @@ data TokenLimiter = TokenLimiter
   }
   deriving (Eq, Generic)
 
+-- | Make a token limiter
+--
+-- This token limiter is thread-safe and guarantees that there will be no thundering herd problem.
+--
+-- The initial number of tokens will be the minimum of the 'tokenLimitConfigInitialTokens' and the 'tokenLimitConfigMaxTokens',
 makeTokenLimiter :: TokenLimitConfig -> IO TokenLimiter
 makeTokenLimiter tokenLimiterConfig = do
   now <- getMonotonicTimeNSec
-  tokenLimiterLastServiced <- newMVar (now, tokenLimitConfigInitialTokens tokenLimiterConfig)
+  tokenLimiterLastServiced <- newMVar (now, min (tokenLimitConfigInitialTokens tokenLimiterConfig) (tokenLimitConfigMaxTokens tokenLimiterConfig))
   pure TokenLimiter {..}
 
 -- | Ask if we could debit a number of tokens, without actually doing it.
@@ -86,7 +91,13 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
       pure ((now, newCount), ())
     else do
       let extraTokensNeeded = debit - currentCount
-      let microsecondsToWait = ceiling $ 1_000_000 * fromIntegral extraTokensNeeded / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+      let microsecondsToWait =
+            ceiling $
+              1_000_000
+                -- fromIntegral :: Word64 -> Double
+                * fromIntegral extraTokensNeeded
+                -- fromIntegral :: Word64 -> Double
+                / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
       threadDelay microsecondsToWait
       nowAfterWaiting <- getMonotonicTimeNSec
       let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
@@ -96,7 +107,12 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
 computeCurrentCount :: TokenLimitConfig -> MonotonicTime -> Count -> MonotonicTime -> Count
 computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
   let nanoDiff = now - lastServiced
-      secondsDiff = nanoDiff `div` 1_000_000_000
-      countToAdd = secondsDiff * tokenLimitConfigTokensPerSecond
+      countToAdd =
+        floor $
+          -- fromIntegral :: Word64 -> Double
+          fromIntegral nanoDiff
+            -- fromIntegral :: Word64 -> Double
+            * fromIntegral tokenLimitConfigTokensPerSecond
+            / 1_000_000_000
       totalCount = countThen + countToAdd
-   in max tokenLimitConfigMaxTokens totalCount
+   in min tokenLimitConfigMaxTokens totalCount

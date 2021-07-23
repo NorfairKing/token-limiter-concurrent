@@ -7,6 +7,7 @@ import Control.Concurrent.Tokenlimiter.Concurrent
 import Control.Monad
 import Data.Word
 import GHC.Clock
+import Test.QuickCheck
 import Test.Syd
 import Test.Syd.Validity
 
@@ -18,6 +19,37 @@ instance GenValid TokenLimitConfig where
 
 spec :: Spec
 spec = do
+  describe "computeCurrentCount" $ do
+    it "works in this super simple case" $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 1,
+                tokenLimitConfigTokensPerSecond = 1
+              }
+      -- One nanosecond later we shouldn't have any more tokens
+      computeCurrentCount config 0 0 1 `shouldBe` 0
+
+    it "Does not need to wait whole seconds to work" $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 1000,
+                tokenLimitConfigTokensPerSecond = 1000
+              }
+      -- After half a second we should have 500 tokens
+      computeCurrentCount config 0 0 500_000_000 `shouldBe` 500
+
+    it "Does not go over the maximum" $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 10,
+                tokenLimitConfigTokensPerSecond = 10
+              }
+      -- One nanosecond later we shouldn't have any more tokens
+      computeCurrentCount config 0 0 2_000_000_000 `shouldBe` 10
+
   describe "makeTokenLimiter" $ do
     it "always succeeds" $
       forAllValid $ \config -> do
@@ -40,7 +72,7 @@ spec = do
         forAllValid $ \needed -> do
           limiter <- makeTokenLimiter config
           couldDebit <- canDebit limiter needed
-          couldDebit `shouldBe` needed <= max (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
+          couldDebit `shouldBe` needed <= min (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
 
   describe "tryDebit" $ do
     it "is correct for this simple example" $ do
@@ -58,7 +90,7 @@ spec = do
         forAllValid $ \needed -> do
           limiter <- makeTokenLimiter config
           didDebit <- tryDebit limiter needed
-          didDebit `shouldBe` needed <= max (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
+          didDebit `shouldBe` needed <= min (tokenLimitConfigInitialTokens config) (tokenLimitConfigMaxTokens config)
 
     it "always says true if canDebit said true first and there are no other threads" $
       forAllValid $ \config ->
@@ -89,20 +121,56 @@ spec = do
                     tokenLimitConfigTokensPerSecond = 1
                   }
           limiter <- makeTokenLimiter config
-          let needed = initial
+          let needed = min initial maxTokens
           nanos <- time_ $ waitDebit limiter needed
           nanos `shouldSatisfy` (< 1_000_000_000)
+
+    it "Waits appropriately when there is one threads that want tokens in this example." $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 1,
+                tokenLimitConfigTokensPerSecond = 1
+              }
+      limiter <- makeTokenLimiter config
+      nanos <- time_ $ waitDebit limiter 1
+      nanos `shouldSatisfy` (>= 1_000_000_000)
+
+    it "does not need to wait a whole number of seconds" $ do
+      let config =
+            TokenLimitConfig
+              { tokenLimitConfigInitialTokens = 0,
+                tokenLimitConfigMaxTokens = 10,
+                tokenLimitConfigTokensPerSecond = 10
+              }
+      limiter <- makeTokenLimiter config
+      nanos <- time_ $ waitDebit limiter 1
+      nanos `shouldSatisfy` (<= 500_000_000)
 
     it "Waits appropriately when there are multiple threads that want tokens at the same time in this example." $ do
       let config =
             TokenLimitConfig
               { tokenLimitConfigInitialTokens = 0,
-                tokenLimitConfigMaxTokens = 2,
+                tokenLimitConfigMaxTokens = 1,
                 tokenLimitConfigTokensPerSecond = 1
               }
       limiter <- makeTokenLimiter config
       nanos <- time_ $ concurrently_ (waitDebit limiter 1) (waitDebit limiter 1)
       nanos `shouldSatisfy` (>= 2_000_000_000)
+
+    modifyMaxSuccess (`div` 50) $
+      it "Waits appropriately when there are many threads that want tokens at the same time in this example." $ do
+        forAll (sized pure) $ \numberOfThreads -> do
+          print numberOfThreads
+          let config =
+                TokenLimitConfig
+                  { tokenLimitConfigInitialTokens = 0,
+                    tokenLimitConfigMaxTokens = 1,
+                    tokenLimitConfigTokensPerSecond = 100
+                  }
+          limiter <- makeTokenLimiter config
+          nanos <- time_ $ replicateConcurrently_ numberOfThreads (waitDebit limiter 1)
+          nanos `shouldSatisfy` (>= fromIntegral numberOfThreads * 10_000_000)
 
 time_ :: IO a -> IO Word64
 time_ func = snd <$> time func
