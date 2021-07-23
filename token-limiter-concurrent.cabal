@@ -21,7 +21,7 @@ source-repository head
 
 library
   exposed-modules:
-      Control.Concurrent.Tokenlimiter.Concurrent
+      Control.Concurrent.TokenLimiter.Concurrent
   other-modules:
       Paths_token_limiter_concurrent
   hs-source-dirs:
@@ -34,7 +34,7 @@ test-suite token-limiter-concurrent-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Control.Concurrent.Tokenlimiter.ConcurrentSpec
+      Control.Concurrent.TokenLimiter.ConcurrentSpec
       Paths_token_limiter_concurrent
   hs-source-dirs:
       test

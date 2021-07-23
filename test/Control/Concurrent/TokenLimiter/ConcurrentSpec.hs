@@ -1,10 +1,10 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Control.Concurrent.Tokenlimiter.ConcurrentSpec (spec) where
+module Control.Concurrent.TokenLimiter.ConcurrentSpec (spec) where
 
 import Control.Concurrent.Async
-import Control.Concurrent.Tokenlimiter.Concurrent
+import Control.Concurrent.TokenLimiter.Concurrent
 import Control.Monad
 import Data.Word
 import GHC.Clock

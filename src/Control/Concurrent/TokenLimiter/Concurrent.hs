@@ -2,7 +2,7 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE RecordWildCards #-}
 
-module Control.Concurrent.Tokenlimiter.Concurrent
+module Control.Concurrent.TokenLimiter.Concurrent
   ( Count,
     TokenLimitConfig (..),
     MonotonicTime,
