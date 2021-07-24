@@ -28,9 +28,9 @@ type Count = Word64
 
 -- | A configuration for 'TokenLimiter'
 data TokenLimitConfig = TokenLimitConfig
-  { -- | how many tokens should be in the bucket when it's created.
+  { -- | How many tokens should be in the bucket when it's created
     tokenLimitConfigInitialTokens :: !Count,
-    -- | maximum number of tokens the bucket can hold at any one time.
+    -- | Maximum number of tokens the bucket can hold at any one time
     tokenLimitConfigMaxTokens :: !Count,
     -- | How many tokens are added to the bucket per second
     tokenLimitConfigTokensPerSecond :: !Count
@@ -52,7 +52,10 @@ data TokenLimiter = TokenLimiter
 
 -- | Make a token limiter
 --
--- This token limiter is thread-safe and guarantees that there will be no thundering herd problem.
+-- This token limiter is thread-safe and guarantees that:
+--
+-- * <https://en.wikipedia.org/wiki/Thundering_herd_problem There will be no thundering herd problem>
+-- * <https://hackage.haskell.org/package/base-4.14.1.0/docs/Control-Concurrent-MVar.html#v:modifyMVar Fairness: Waiting processes will be serviced in a first-come first-service order.>
 --
 -- The initial number of tokens will be the minimum of the 'tokenLimitConfigInitialTokens' and the 'tokenLimitConfigMaxTokens',
 makeTokenLimiter :: TokenLimitConfig -> IO TokenLimiter
