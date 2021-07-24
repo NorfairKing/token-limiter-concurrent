@@ -43,19 +43,22 @@ data TokenLimitConfig = TokenLimitConfig
 type MonotonicTime = Word64
 
 -- | A token bucket-based rate limiter
-data TokenLimiter = TokenLimiter
-  { tokenLimiterConfig :: !TokenLimitConfig,
-    -- | The last time the limiter was used, and what the token count was at that time
-    tokenLimiterLastServiced :: !(MVar (MonotonicTime, Count))
-  }
-  deriving (Eq, Generic)
-
--- | Make a token limiter
 --
 -- This token limiter is thread-safe and guarantees that:
 --
 -- * <https://en.wikipedia.org/wiki/Thundering_herd_problem There will be no thundering herd problem>
 -- * <https://hackage.haskell.org/package/base-4.14.1.0/docs/Control-Concurrent-MVar.html#v:modifyMVar Fairness: Waiting processes will be serviced in a first-come first-service order.>
+data TokenLimiter = TokenLimiter
+  { tokenLimiterConfig :: !TokenLimitConfig,
+    -- | The last time the limiter was used, and what the token count was at that time.
+    --
+    -- Not that this library assumes that you never put anything into this mvar
+    -- yourself and only use the functions in this library to interact with it.
+    tokenLimiterLastServiced :: !(MVar (MonotonicTime, Count))
+  }
+  deriving (Eq, Generic)
+
+-- | Make a token limiter
 --
 -- The initial number of tokens will be the minimum of the 'tokenLimitConfigInitialTokens' and the 'tokenLimitConfigMaxTokens',
 makeTokenLimiter :: TokenLimitConfig -> IO TokenLimiter
@@ -109,8 +112,16 @@ waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(las
               -- fromIntegral :: Word64 -> Double
               / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
       let microsecondsToWait = ceiling microsecondsToWaitDouble
+      -- threadDelay guarantees that _at least_ the given number of microseconds will have passed.
       threadDelay microsecondsToWait
+      -- However, it could be MUCH longer than that, so we will recalculate the time instead of
+      -- adding that number of microseconds to the old time.
       nowAfterWaiting <- getMonotonicTimeNSec
+      -- We do assume here that we will now have enough tokens and do not need to recalculate whether there will be enough.
+      -- (We would not know what to do if there weren't, anyway.)
+      -- BUT this assumption _should_ hold because _modifyMVar_ guarantees
+      -- atomicity if there are no other producers for this MVar, which there
+      -- aren't.
       let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
       let newCount = currentCountAfterWaiting - debit
       pure (nowAfterWaiting, newCount)
