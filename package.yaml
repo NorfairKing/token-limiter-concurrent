@@ -1,7 +1,7 @@
 name:                token-limiter-concurrent
 version:             0.0.0.0
 github:              "NorfairKing/token-limiter-concurrent"
-license:             BSD3
+license:             MIT
 author:              "Tom Sydney Kerckhove"
 maintainer:          "syd@cs-syd.eu"
 copyright:           "Copyright (c) 2021 Tom Sydney Kerckhove"
