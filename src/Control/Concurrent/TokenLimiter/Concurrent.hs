@@ -91,14 +91,14 @@ tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastS
 
 -- | Wait until the given number of tokens can be debited
 waitDebit :: TokenLimiter -> Word64 -> IO ()
-waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
+waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
   let enoughAvailable = currentCount >= debit
   if enoughAvailable
     then do
       let newCount = currentCount - debit
-      pure ((now, newCount), ())
+      pure (now, newCount)
     else do
       let extraTokensNeeded = debit - currentCount
       let microsecondsToWaitDouble :: Double
@@ -113,7 +113,7 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
       nowAfterWaiting <- getMonotonicTimeNSec
       let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
       let newCount = currentCountAfterWaiting - debit
-      pure ((nowAfterWaiting, newCount), ())
+      pure (nowAfterWaiting, newCount)
 
 -- | Compute the current number of tokens in a bucket purely.
 --
