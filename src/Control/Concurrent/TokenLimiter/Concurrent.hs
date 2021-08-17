@@ -71,6 +71,9 @@ data TokenLimiter = TokenLimiter
   deriving (Eq, Generic)
 
 
+data EnoughAvailable = Available | Exhausted
+
+
 getLastServiced :: Count 'Initial -> Count 'Max -> Count 'LastServiced
 getLastServiced (Count initial) (Count max') = Count $ initial `min` max'
 
@@ -93,8 +96,8 @@ makeTokenLimiter tokenLimiterConfig = do
   pure TokenLimiter {..}
 
 
-enoughAvailable :: Count 'Current -> Count 'Debit -> Bool
-enoughAvailable (Count currentCount) (Count debit) = currentCount >= debit
+enoughAvailable :: Count 'Current -> Count 'Debit -> EnoughAvailable
+enoughAvailable (Count currentCount) (Count debit) = if currentCount >= debit then Available else Exhausted
 
 
 getNewCount :: Count 'Current -> Count 'Debit -> Count 'LastServiced
@@ -105,7 +108,7 @@ getNewCount (Count currentCount) (Count debit) = Count $ currentCount - debit
 --
 -- Note that this information can become stale _very_ quickly.
 -- If you want to also actually debit a number of tokens, use 'tryDebit' instead.
-canDebit :: TokenLimiter -> Count 'Debit -> IO Bool
+canDebit :: TokenLimiter -> Count 'Debit -> IO EnoughAvailable
 canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
@@ -114,13 +117,13 @@ canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastSer
 -- | Check if we can debit a number of tokens, and do it if possible.
 --
 -- The returned boolean represents whether the tokens were debited.
-tryDebit :: TokenLimiter -> Count 'Debit -> IO Bool
+tryDebit :: TokenLimiter -> Count 'Debit -> IO EnoughAvailable
 tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
-  pure $ if enoughAvailable currentCount debit
-    then ((lastServicedIsNow now, getNewCount currentCount debit), True)
-    else ((lastServiced, countThen), False)
+  pure $ case enoughAvailable currentCount debit of
+    Available -> ((lastServicedIsNow now, getNewCount currentCount debit), Available)
+    Exhausted -> ((lastServiced, countThen), Exhausted)
 
 -- | Wait until the given number of tokens can be debited
 waitDebit :: TokenLimiter -> Count 'Debit -> IO ()
@@ -128,9 +131,9 @@ waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(las
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
       extraTokensNeeded (Count debit) (Count currentCount) = Count $ debit - currentCount
-  if enoughAvailable currentCount debit
-    then pure (lastServicedIsNow now, getNewCount currentCount debit)
-    else do
+  case enoughAvailable currentCount debit of
+    Available -> pure (lastServicedIsNow now, getNewCount currentCount debit)
+    Exhausted -> do
       let microsecondsToWaitDouble :: Double
           microsecondsToWaitDouble =
             1_000_000
