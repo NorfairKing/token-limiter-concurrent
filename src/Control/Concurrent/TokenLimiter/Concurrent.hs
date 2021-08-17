@@ -137,10 +137,8 @@ waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(las
       let microsecondsToWaitDouble :: Double
           microsecondsToWaitDouble =
             1_000_000
-              -- fromIntegral :: Word64 -> Double
-              * fromIntegral (extraTokensNeeded debit currentCount)
-              -- fromIntegral :: Word64 -> Double
-              / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+              * fromIntegral (extraTokensNeeded debit currentCount :: Count 'PerSecond)
+              / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig :: Count 'PerSecond)
       let microsecondsToWait = ceiling microsecondsToWaitDouble
       -- threadDelay guarantees that _at least_ the given number of microseconds will have passed.
       threadDelay microsecondsToWait
@@ -163,11 +161,8 @@ computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
 
   let countToAdd, totalCount :: Word64
       countToAdd = floor $
-
-        -- fromIntegral :: Word64 -> Double
-        fromIntegral (getMonotonicTime now - getMonotonicTime lastServiced)
-          -- fromIntegral :: Word64 -> Double
-          * fromIntegral tokenLimitConfigTokensPerSecond
+        fromIntegral (getMonotonicTime now - getMonotonicTime lastServiced :: Word64)
+          * fromIntegral (tokenLimitConfigTokensPerSecond :: Count 'PerSecond)
           / 1_000_000_000
 
       totalCount = getCount countThen + countToAdd
