@@ -1,11 +1,14 @@
-name:                token-limiter-concurrent
-version:             0.0.0.0
-github:              "NorfairKing/token-limiter-concurrent"
-license:             MIT
-author:              "Tom Sydney Kerckhove"
-maintainer:          "syd@cs-syd.eu"
-copyright:           "Copyright (c) 2021 Tom Sydney Kerckhove"
-synopsis:            "A thread-safe concurrent token-bucket rate limiter that guarantees fairness"
+name: token-limiter-concurrent
+version: 0.0.0.0
+github: "NorfairKing/token-limiter-concurrent"
+license: MIT
+author: "Tom Sydney Kerckhove"
+maintainer: "syd@cs-syd.eu"
+copyright: "Copyright (c) 2022 Tom Sydney Kerckhove"
+synopsis: "A thread-safe concurrent token-bucket rate limiter that guarantees fairness"
+
+extra-source-files:
+- LICENSE
 
 dependencies:
 - base >= 4.7 && < 5

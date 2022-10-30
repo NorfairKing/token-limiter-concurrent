@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.34.7.
 --
 -- see: https://github.com/sol/hpack
 
@@ -11,10 +11,12 @@ homepage:       https://github.com/NorfairKing/token-limiter-concurrent#readme
 bug-reports:    https://github.com/NorfairKing/token-limiter-concurrent/issues
 author:         Tom Sydney Kerckhove
 maintainer:     syd@cs-syd.eu
-copyright:      Copyright (c) 2021 Tom Sydney Kerckhove
+copyright:      Copyright (c) 2022 Tom Sydney Kerckhove
 license:        MIT
 license-file:   LICENSE
 build-type:     Simple
+extra-source-files:
+    LICENSE
 
 source-repository head
   type: git
