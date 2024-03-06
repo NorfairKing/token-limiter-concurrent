@@ -71,6 +71,9 @@ makeTokenLimiter tokenLimiterConfig = do
 --
 -- Note that this information can become stale _very_ quickly.
 -- If you want to also actually debit a number of tokens, use 'tryDebit' instead.
+--
+-- Warning: this function can block for long if there are other threads waiting to debit tokens.
+-- Use in conjunction with an Async.race timeout or similar if you want to avoid lengthy blocking.
 canDebit :: TokenLimiter -> Word64 -> IO Bool
 canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
@@ -81,6 +84,8 @@ canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastSer
 -- | Check if we can debit a number of tokens, and do it if possible.
 --
 -- The returned boolean represents whether the tokens were debited.
+--
+-- Warning: blocking caveat described in 'canDebit' applies here too.
 tryDebit :: TokenLimiter -> Word64 -> IO Bool
 tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
@@ -92,7 +97,11 @@ tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastS
       pure ((now, newCount), True)
     else pure ((lastServiced, countThen), False)
 
--- | Wait until the given number of tokens can be debited
+-- | Wait until the given number of tokens can be debited.
+--
+-- Note: debitor threads are serviced in FIFO order, so a request for a small
+-- (and currently satisfiable) number of tokens can still be delayed by a debit
+-- request for a larger amount of tokens.
 waitDebit :: TokenLimiter -> Word64 -> IO ()
 waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
