@@ -11,6 +11,8 @@ module Control.Concurrent.TokenLimiter.Concurrent
     canDebit,
     tryDebit,
     waitDebit,
+    MonotonicDiffNanos (..),
+    waitDebitObserve,
 
     -- * Helper functions
     computeCurrentCount,
@@ -18,6 +20,7 @@ module Control.Concurrent.TokenLimiter.Concurrent
 where
 
 import Control.Concurrent
+import Control.Monad (void)
 import Data.Word
 import GHC.Clock
 import GHC.Generics (Generic)
@@ -41,6 +44,9 @@ data TokenLimitConfig = TokenLimitConfig
 --
 -- This only exists because it is also a 'Word64' and would be too easy to confuse with a 'Count'.
 type MonotonicTime = Word64
+
+newtype MonotonicDiffNanos = MonotonicDiffNanos {unMonotonicDiffNanos :: Word64}
+  deriving (Show, Eq, Ord, Generic)
 
 -- | A token bucket-based rate limiter
 --
@@ -71,6 +77,9 @@ makeTokenLimiter tokenLimiterConfig = do
 --
 -- Note that this information can become stale _very_ quickly.
 -- If you want to also actually debit a number of tokens, use 'tryDebit' instead.
+--
+-- Warning: this function can block for long if there are other threads waiting to debit tokens.
+-- Use in conjunction with an Async.race timeout or similar if you want to avoid lengthy blocking.
 canDebit :: TokenLimiter -> Word64 -> IO Bool
 canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
@@ -81,6 +90,8 @@ canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastSer
 -- | Check if we can debit a number of tokens, and do it if possible.
 --
 -- The returned boolean represents whether the tokens were debited.
+--
+-- Warning: blocking caveat described in 'canDebit' applies here too.
 tryDebit :: TokenLimiter -> Word64 -> IO Bool
 tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
@@ -92,16 +103,31 @@ tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastS
       pure ((now, newCount), True)
     else pure ((lastServiced, countThen), False)
 
--- | Wait until the given number of tokens can be debited
+-- | Wait until the given number of tokens can be debited.
+--
+-- Note: debitor threads are serviced in FIFO order, so a request for a small
+-- (and currently satisfiable) number of tokens can still be delayed by a debit
+-- request for a larger amount of tokens.
 waitDebit :: TokenLimiter -> Word64 -> IO ()
-waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
+waitDebit limiter debit = void (waitDebitObserve limiter debit)
+
+-- | Same as 'waitDebit', but returns the wait time due to rate limiting.
+--
+-- Note: only reports the time waited due to rate-limiting this specific action,
+-- not the wall-clock time waited (that might include waiting for previous
+-- actions limited by this rate limiter to finish).
+--
+-- Note: the wait time reported can be inflated due to scheduling inaccuracy.
+-- See https://gitlab.haskell.org/ghc/ghc/-/issues/16601.
+waitDebitObserve :: TokenLimiter -> Word64 -> IO (Maybe MonotonicDiffNanos)
+waitDebitObserve TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
   let enoughAvailable = currentCount >= debit
   if enoughAvailable
     then do
       let newCount = currentCount - debit
-      pure (now, newCount)
+      pure ((now, newCount), Nothing)
     else do
       let extraTokensNeeded = debit - currentCount
       let microsecondsToWaitDouble :: Double
@@ -117,6 +143,7 @@ waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(las
       -- However, it could be MUCH longer than that, so we will recalculate the time instead of
       -- adding that number of microseconds to the old time.
       nowAfterWaiting <- getMonotonicTimeNSec
+      let delta = MonotonicDiffNanos (nowAfterWaiting - now)
       -- We do assume here that we will now have enough tokens and do not need to recalculate whether there will be enough.
       -- (We would not know what to do if there weren't, anyway.)
       -- BUT this assumption _should_ hold because _modifyMVar_ guarantees
@@ -124,7 +151,7 @@ waitDebit TokenLimiter {..} debit = modifyMVar_ tokenLimiterLastServiced $ \(las
       -- aren't.
       let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
       let newCount = currentCountAfterWaiting - debit
-      pure (nowAfterWaiting, newCount)
+      pure ((nowAfterWaiting, newCount), Just delta)
 
 -- | Compute the current number of tokens in a bucket purely.
 --
