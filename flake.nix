@@ -3,6 +3,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-23.05";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+    fast-myers-diff.url = "github:NorfairKing/fast-myers-diff";
+    fast-myers-diff.flake = false;
     validity.url = "github:NorfairKing/validity";
     validity.flake = false;
     autodocodec.url = "github:NorfairKing/autodocodec";
@@ -22,8 +24,8 @@
     , nixpkgs-22_11
     , nixpkgs-22_05
     , nixpkgs-21_11
-    , flake-utils
     , pre-commit-hooks
+    , fast-myers-diff
     , validity
     , safe-coloured-text
     , autodocodec
@@ -35,6 +37,7 @@
         inherit system;
         overlays = [
           self.overlays.${system}
+          (import (fast-myers-diff + "/nix/overlay.nix"))
           (import (validity + "/nix/overlay.nix"))
           (import (autodocodec + "/nix/overlay.nix"))
           (import (safe-coloured-text + "/nix/overlay.nix"))

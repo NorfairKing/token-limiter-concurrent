@@ -54,7 +54,7 @@ spec = do
     it "Can deal with overflow" $ do
       let config =
             TokenLimitConfig
-              { tokenLimitConfigInitialTokens = maxBound -1,
+              { tokenLimitConfigInitialTokens = maxBound - 1,
                 tokenLimitConfigMaxTokens = maxBound,
                 tokenLimitConfigTokensPerSecond = 1
               }
