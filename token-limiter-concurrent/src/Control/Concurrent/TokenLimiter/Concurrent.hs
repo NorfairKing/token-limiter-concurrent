@@ -3,16 +3,17 @@
 {-# LANGUAGE RecordWildCards #-}
 
 module Control.Concurrent.TokenLimiter.Concurrent
-  ( Count,
+  ( -- * Create
+    Count,
     TokenLimitConfig (..),
     MonotonicTime,
     TokenLimiter (..),
     makeTokenLimiter,
-    canDebit,
+
+    -- * Use
     tryDebit,
     waitDebit,
     MonotonicDiffNanos (..),
-    waitDebitObserve,
 
     -- * Helper functions
     computeCurrentCount,
@@ -20,7 +21,9 @@ module Control.Concurrent.TokenLimiter.Concurrent
 where
 
 import Control.Concurrent
-import Control.Monad (void)
+import Control.Exception
+import Control.Monad
+import Data.Maybe (fromMaybe)
 import Data.Word
 import GHC.Clock
 import GHC.Generics (Generic)
@@ -73,54 +76,44 @@ makeTokenLimiter tokenLimiterConfig = do
   tokenLimiterLastServiced <- newMVar (now, min (tokenLimitConfigInitialTokens tokenLimiterConfig) (tokenLimitConfigMaxTokens tokenLimiterConfig))
   pure TokenLimiter {..}
 
--- | Ask if we could debit a number of tokens, without actually doing it.
---
--- Note that this information can become stale _very_ quickly.
--- If you want to also actually debit a number of tokens, use 'tryDebit' instead.
---
--- Warning: this function can block for long if there are other threads waiting to debit tokens.
--- Use in conjunction with an Async.race timeout or similar if you want to avoid lengthy blocking.
-canDebit :: TokenLimiter -> Word64 -> IO Bool
-canDebit TokenLimiter {..} debit = withMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
-  now <- getMonotonicTimeNSec
-  let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
-  let enoughAvailable = currentCount >= debit
-  pure enoughAvailable
-
 -- | Check if we can debit a number of tokens, and do it if possible.
 --
 -- The returned boolean represents whether the tokens were debited.
 --
--- Warning: blocking caveat described in 'canDebit' applies here too.
+-- Note that there is a small race-condition in which `tryDebit` sometimes
+-- returns `False` eventhough it could (maybe) have debited because another
+-- thread was currently `waitDebit`-ing without actually waiting (because it
+-- didn't need to wait).
 tryDebit :: TokenLimiter -> Word64 -> IO Bool
-tryDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
-  now <- getMonotonicTimeNSec
-  let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
-  let enoughAvailable = currentCount >= debit
-  if enoughAvailable
-    then do
-      let newCount = currentCount - debit
-      pure ((now, newCount), True)
-    else pure ((lastServiced, countThen), False)
+tryDebit TokenLimiter {..} debit =
+  fmap (fromMaybe False) $
+    tryModifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
+      now <- getMonotonicTimeNSec
+      let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
+      let enoughAvailable = currentCount >= debit
+      pure $
+        if enoughAvailable
+          then
+            let newCount = currentCount - debit
+             in ((now, newCount), True)
+          else ((lastServiced, countThen), False)
 
 -- | Wait until the given number of tokens can be debited.
 --
--- Note: debitor threads are serviced in FIFO order, so a request for a small
--- (and currently satisfiable) number of tokens can still be delayed by a debit
--- request for a larger amount of tokens.
-waitDebit :: TokenLimiter -> Word64 -> IO ()
-waitDebit limiter debit = void (waitDebitObserve limiter debit)
-
--- | Same as 'waitDebit', but returns the wait time due to rate limiting.
+-- Returns the time waited, for stats recording purposes.
 --
 -- Note: only reports the time waited due to rate-limiting this specific action,
 -- not the wall-clock time waited (that might include waiting for previous
 -- actions limited by this rate limiter to finish).
 --
+-- Note: debitor threads are serviced in FIFO order, so a request for a small
+-- (and currently satisfiable) number of tokens can still be delayed by a debit
+-- request for a larger amount of tokens.
+--
 -- Note: the wait time reported can be inflated due to scheduling inaccuracy.
 -- See https://gitlab.haskell.org/ghc/ghc/-/issues/16601.
-waitDebitObserve :: TokenLimiter -> Word64 -> IO (Maybe MonotonicDiffNanos)
-waitDebitObserve TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
+waitDebit :: TokenLimiter -> Word64 -> IO (Maybe MonotonicDiffNanos)
+waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(lastServiced, countThen) -> do
   now <- getMonotonicTimeNSec
   let currentCount = computeCurrentCount tokenLimiterConfig lastServiced countThen now
   let enoughAvailable = currentCount >= debit
@@ -133,10 +126,9 @@ waitDebitObserve TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $
       let microsecondsToWaitDouble :: Double
           microsecondsToWaitDouble =
             1_000_000
-              -- fromIntegral :: Word64 -> Double
-              * fromIntegral extraTokensNeeded
-              -- fromIntegral :: Word64 -> Double
-              / fromIntegral (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+              * (fromIntegral :: Word64 -> Double) extraTokensNeeded
+              / (fromIntegral :: Word64 -> Double) (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+
       let microsecondsToWait = ceiling microsecondsToWaitDouble
       -- threadDelay guarantees that _at least_ the given number of microseconds will have passed.
       threadDelay microsecondsToWait
@@ -162,10 +154,8 @@ computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
       nanoDiff = now - lastServiced
       countToAddDouble :: Double
       countToAddDouble =
-        -- fromIntegral :: Word64 -> Double
-        fromIntegral nanoDiff
-          -- fromIntegral :: Word64 -> Double
-          * fromIntegral tokenLimitConfigTokensPerSecond
+        (fromIntegral :: Word64 -> Double) nanoDiff
+          * (fromIntegral :: Word64 -> Double) tokenLimitConfigTokensPerSecond
           / 1_000_000_000
       countToAdd :: Word64
       countToAdd = floor countToAddDouble
@@ -176,3 +166,14 @@ computeCurrentCount TokenLimitConfig {..} lastServiced countThen now =
    in if willOverflow
         then tokenLimitConfigMaxTokens
         else min tokenLimitConfigMaxTokens totalCount
+
+tryModifyMVar :: MVar a -> (a -> IO (a, b)) -> IO (Maybe b)
+tryModifyMVar m io =
+  mask $ \restore -> do
+    mA <- tryTakeMVar m
+    forM mA $ \a -> do
+      (a', b) <-
+        restore (io a)
+          `onException` putMVar m a
+      putMVar m a'
+      pure b
