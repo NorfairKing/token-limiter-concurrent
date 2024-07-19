@@ -1,7 +1,7 @@
 {
   description = "token-limiter-concurrent";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-23.05";
+    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-24.05";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
     fast-myers-diff.url = "github:NorfairKing/fast-myers-diff";
     fast-myers-diff.flake = false;
@@ -13,17 +13,15 @@
     safe-coloured-text.flake = false;
     sydtest.url = "github:NorfairKing/sydtest";
     sydtest.flake = false;
-    nixpkgs-22_11.url = "github:NixOS/nixpkgs?ref=nixos-22.11";
-    nixpkgs-22_05.url = "github:NixOS/nixpkgs?ref=nixos-22.05";
-    nixpkgs-21_11.url = "github:NixOS/nixpkgs?ref=nixos-21.11";
+    nixpkgs-23_11.url = "github:NixOS/nixpkgs?ref=nixos-23.11";
+    nixpkgs-23_05.url = "github:NixOS/nixpkgs?ref=nixos-23.05";
   };
 
   outputs =
     { self
     , nixpkgs
-    , nixpkgs-22_11
-    , nixpkgs-22_05
-    , nixpkgs-21_11
+    , nixpkgs-23_11
+    , nixpkgs-23_05
     , pre-commit-hooks
     , fast-myers-diff
     , validity
@@ -56,9 +54,8 @@
             in pkgs'.haskellPackages.token-limiter-concurrent;
           allNixpkgs = {
             inherit
-              nixpkgs-22_11
-              nixpkgs-22_05
-              nixpkgs-21_11;
+              nixpkgs-23_11
+              nixpkgs-23_05;
           };
           backwardCompatibilityChecks = pkgs.lib.mapAttrs (_: nixpkgs: backwardCompatibilityCheckFor nixpkgs) allNixpkgs;
         in
@@ -81,17 +78,9 @@
         withHoogle = true;
         doBenchmark = true;
         buildInputs = with pkgs; [
-          niv
           zlib
           cabal-install
-        ] ++ (with pre-commit-hooks;
-          [
-            hlint
-            hpack
-            nixpkgs-fmt
-            ormolu
-            cabal2nix
-          ]);
+        ] ++ self.checks.${system}.pre-commit.enabledPackages;
         shellHook = self.checks.${system}.pre-commit.shellHook;
       };
     };
