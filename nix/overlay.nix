@@ -1,13 +1,13 @@
 final: prev:
-with final.lib;
-with final.haskell.lib;
+let
+  overrides = (final.callPackage ./overrides.nix { });
+  addOverrides = old: { overrides = final.lib.composeExtensions (old.overrides or (_: _: { })) overrides; };
+in
 {
-  haskellPackages = prev.haskellPackages.override (old: {
-    overrides =
-      composeExtensions (old.overrides or (_: _: { })) (
-        self: super: {
-          token-limiter-concurrent = buildStrictly (self.callPackage ../token-limiter-concurrent { });
-        }
-      );
-  });
+  haskell = prev.haskell // {
+    packages = builtins.mapAttrs
+      (compiler: haskellPackages: haskellPackages.override addOverrides)
+      prev.haskell.packages;
+  };
+  haskellPackages = prev.haskellPackages.override addOverrides;
 }
