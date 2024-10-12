@@ -185,7 +185,7 @@ spec = do
                 TokenLimitConfig
                   { tokenLimitConfigInitialTokens = 0,
                     tokenLimitConfigMaxTokens = 1,
-                    tokenLimitConfigTokensPerSecond = 50
+                    tokenLimitConfigTokensPerSecond = 10
                   }
           limiter <- makeTokenLimiter config
           let l :: [Int]
