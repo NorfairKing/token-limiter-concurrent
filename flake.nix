@@ -1,7 +1,8 @@
 {
   description = "token-limiter-concurrent";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-24.05";
+    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-24.11";
+    nixpkgs-24_05.url = "github:NixOS/nixpkgs?ref=nixos-24.05";
     nixpkgs-23_11.url = "github:NixOS/nixpkgs?ref=nixos-23.11";
     horizon-advance.url = "git+https://gitlab.horizon-haskell.net/package-sets/horizon-advance";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
@@ -22,6 +23,7 @@
   outputs =
     { self
     , nixpkgs
+    , nixpkgs-24_05
     , nixpkgs-23_11
     , horizon-advance
     , pre-commit-hooks
@@ -34,7 +36,7 @@
     }:
     let
       system = "x86_64-linux";
-      nixpkgsFor = nixpkgs: import nixpkgs { inherit system; config.allowUnfree = true; };
+      nixpkgsFor = nixpkgs: import nixpkgs { inherit system; config.allowUnfree = true; config.allowBroken = true; };
       pkgs = nixpkgsFor nixpkgs;
       allOverrides = pkgs.lib.composeManyExtensions [
         (pkgs.callPackage (fast-myers-diff + "/nix/overrides.nix") { })
@@ -58,6 +60,7 @@
           backwardCompatibilityCheckFor = nixpkgs: (haskellPackagesFor nixpkgs).autodocodecRelease;
           allNixpkgs = {
             inherit
+              nixpkgs-24_05
               nixpkgs-23_11;
           };
           backwardCompatibilityChecks = pkgs.lib.mapAttrs (_: nixpkgs: backwardCompatibilityCheckFor nixpkgs) allNixpkgs;
