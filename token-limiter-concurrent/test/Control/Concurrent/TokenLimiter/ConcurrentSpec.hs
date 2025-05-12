@@ -64,6 +64,16 @@ spec = do
       -- 10 seconds later we should have no more than maxBound, eventhough the computed count would be maxBound + 9
       computeCurrentCount config 0 maxBound 10_000_000_000 `shouldBe` maxBound
 
+  describe "computeMicrosecondsToWait" $ do
+    it "Instructs to wait for one second to get one token" $ do
+      computeMicrosecondsToWait 1 1 `shouldBe` Just 1_000_000
+
+    it "instructs to wait forever if no tokens are added" $ do
+      computeMicrosecondsToWait 0 1 `shouldBe` Nothing
+
+    it "instructs to wait forever if no tokens will be available soon enough" $ do
+      computeMicrosecondsToWait 1 maxBound `shouldBe` Nothing
+
   describe "makeTokenLimiter" $ do
     it "always succeeds" $
       forAllValid $ \config -> do

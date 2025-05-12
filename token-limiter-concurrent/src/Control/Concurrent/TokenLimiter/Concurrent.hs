@@ -16,6 +16,7 @@ module Control.Concurrent.TokenLimiter.Concurrent
     MonotonicDiffNanos (..),
 
     -- * Helper functions
+    computeMicrosecondsToWait,
     computeCurrentCount,
   )
 where
@@ -123,27 +124,48 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
       pure ((now, newCount), Nothing)
     else do
       let extraTokensNeeded = debit - currentCount
-      let microsecondsToWaitDouble :: Double
-          microsecondsToWaitDouble =
-            1_000_000
-              * (fromIntegral :: Word64 -> Double) extraTokensNeeded
-              / (fromIntegral :: Word64 -> Double) (tokenLimitConfigTokensPerSecond tokenLimiterConfig)
+      case computeMicrosecondsToWait (tokenLimitConfigTokensPerSecond tokenLimiterConfig) extraTokensNeeded of
+        Nothing -> do
+          -- We can't wait for this long, so we just wait forever.
+          -- This is a bit sad, but it is the best we can do.
+          -- We could also throw an exception, but that would be a bit rude.
+          -- So we just wait forever.
+          pure ((lastServiced, countThen), Nothing)
+        Just microsecondsToWait -> do
+          -- We can wait for this long, so we will.
+          --
+          -- threadDelay guarantees that _at least_ the given number of microseconds will have passed.
+          threadDelay microsecondsToWait
+          -- However, it could be MUCH longer than that, so we will recalculate the time instead of
+          -- adding that number of microseconds to the old time.
+          nowAfterWaiting <- getMonotonicTimeNSec
+          let delta = MonotonicDiffNanos (nowAfterWaiting - now)
+          -- We do assume here that we will now have enough tokens and do not need to recalculate whether there will be enough.
+          -- (We would not know what to do if there weren't, anyway.)
+          -- BUT this assumption _should_ hold because _modifyMVar_ guarantees
+          -- atomicity if there are no other producers for this MVar, which there
+          -- aren't.
+          let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
+          let newCount = currentCountAfterWaiting - debit
+          pure ((nowAfterWaiting, newCount), Just delta)
 
-      let microsecondsToWait = ceiling microsecondsToWaitDouble
-      -- threadDelay guarantees that _at least_ the given number of microseconds will have passed.
-      threadDelay microsecondsToWait
-      -- However, it could be MUCH longer than that, so we will recalculate the time instead of
-      -- adding that number of microseconds to the old time.
-      nowAfterWaiting <- getMonotonicTimeNSec
-      let delta = MonotonicDiffNanos (nowAfterWaiting - now)
-      -- We do assume here that we will now have enough tokens and do not need to recalculate whether there will be enough.
-      -- (We would not know what to do if there weren't, anyway.)
-      -- BUT this assumption _should_ hold because _modifyMVar_ guarantees
-      -- atomicity if there are no other producers for this MVar, which there
-      -- aren't.
-      let currentCountAfterWaiting = computeCurrentCount tokenLimiterConfig lastServiced countThen nowAfterWaiting
-      let newCount = currentCountAfterWaiting - debit
-      pure ((nowAfterWaiting, newCount), Just delta)
+computeMicrosecondsToWait :: Count -> Word64 -> Maybe Int
+computeMicrosecondsToWait tokensPerSecond extraTokensNeeded = do
+  let microsecondsToWaitDouble :: Double
+      microsecondsToWaitDouble =
+        1_000_000
+          * (fromIntegral :: Word64 -> Double) extraTokensNeeded
+          / (fromIntegral :: Word64 -> Double) tokensPerSecond
+
+  let maxBoundDouble :: Double
+      maxBoundDouble = fromIntegral (maxBound :: Int)
+
+  guard $ microsecondsToWaitDouble < maxBoundDouble
+
+  pure $ ceiling microsecondsToWaitDouble
+
+waitForever :: IO void
+waitForever = forever $ threadDelay 1_000_000
 
 -- | Compute the current number of tokens in a bucket purely.
 --
