@@ -3,7 +3,7 @@
 }:
 mkDerivation {
   pname = "token-limiter-concurrent";
-  version = "0.2.0.0";
+  version = "0.2.0.1";
   src = ./.;
   libraryHaskellDepends = [ base ];
   testHaskellDepends = [

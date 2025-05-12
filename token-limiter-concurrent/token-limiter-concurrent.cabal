@@ -1,6 +1,6 @@
 cabal-version: 1.12
 name: token-limiter-concurrent
-version: 0.2.0.0
+version: 0.2.0.1
 synopsis: A thread-safe concurrent token-bucket rate limiter that guarantees fairness
 homepage: https://github.com/NorfairKing/token-limiter-concurrent#readme
 bug-reports: https://github.com/NorfairKing/token-limiter-concurrent/issues

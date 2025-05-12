@@ -130,7 +130,7 @@ waitDebit TokenLimiter {..} debit = modifyMVar tokenLimiterLastServiced $ \(last
           -- This is a bit sad, but it is the best we can do.
           -- We could also throw an exception, but that would be a bit rude.
           -- So we just wait forever.
-          pure ((lastServiced, countThen), Nothing)
+          waitForever
         Just microsecondsToWait -> do
           -- We can wait for this long, so we will.
           --
